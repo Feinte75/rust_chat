@@ -3,39 +3,58 @@ use std::thread;
 use std::sync::{Arc, Mutex};
 use std::io::prelude::*;
 use std::str;
+use std::time::Duration;
+use std::io::{ErrorKind};
 
 struct Client {
     stream : TcpStream,
     pseudo : String
 }
 
-fn handle_messages(mut clients_sharable : Arc<Mutex<Vec<Client>>>) {
-    let mut nb_clients = 0;
-    loop {
+fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
 
+    let mut client_message = [0 ; 100];
+    loop {
         {
             let mut clients = clients_sharable.lock().unwrap();
             if clients.len() != 0 
             {
-                if nb_clients != clients.len() {
-                    nb_clients = clients.len();
-                    println!("Mutex acquired, {} clients connected !", clients.len());
-                    for client in clients.iter_mut() {
+                //                println!("Mutex acquired, {} clients connected !", clients.len());
+                for client in clients.iter_mut() {
+                    let peer_addr = client.stream.peer_addr().unwrap();
+                    //                    println!("{}", peer_addr);
+                    let _ = client.stream.set_read_timeout(Some(Duration::from_millis(10)));
 
-                        //let mut client = clients.pop().unwrap();
-                        let _ = client.stream.write(client.pseudo.as_bytes());
+                    match client.stream.read(&mut client_message) {
+                        Err(e) => {
+                            if e.kind() == ErrorKind::ConnectionAborted {
+
+                                println!("SHIIIIT3");
+                                println!("oups: {}", e);
+                            } else {
+                                println!("Nope");
+                            }
+                        },
+                        Ok(nb) => {
+
+                            if nb != 0 {
+                                println!("{}", str::from_utf8(&client_message).unwrap());
+                                let _ = client.stream.write(client.pseudo.as_bytes());
+                            }
+                        }
                     }
                 }
             }
         }
         thread::sleep_ms(50);
     }
+
 }
 
 pub fn lobby() {
 
     let listener = TcpListener::bind("127.0.0.1:50050").unwrap();
-    let mut clients_sharable = Arc::new(Mutex::new(Vec::<Client>::new()));
+    let clients_sharable = Arc::new(Mutex::new(Vec::<Client>::new()));
 
     let clone = clients_sharable.clone();
     println!("Message handler spawning");
@@ -52,6 +71,7 @@ pub fn lobby() {
                 let _ = stream.read(&mut b);
                 pseudo.push_str(str::from_utf8(&b).unwrap());
                 println!("Recieved pseudo : {}", pseudo);
+                let _ = stream.write(&mut pseudo.as_bytes());
 
                 let mut clients = clients_sharable.lock().unwrap();
                 println!("Pushing new client in Vec !");
