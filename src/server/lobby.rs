@@ -1,4 +1,4 @@
-use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream, SocketAddr, SocketAddrV4, IpAddr, Ipv4Addr, ToSocketAddrs};
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::io::prelude::*;
@@ -7,6 +7,7 @@ use std::time::Duration;
 use std::io::{ErrorKind};
 
 struct Client {
+    id : i32,
     stream : TcpStream,
     pseudo : String
 }
@@ -14,39 +15,57 @@ struct Client {
 fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
 
     let mut client_message = [0 ; 100];
+    let mut remove_ids = Vec::new();
+
     loop {
         {
             let mut clients = clients_sharable.lock().unwrap();
-            if clients.len() != 0 
-            {
-                //                println!("Mutex acquired, {} clients connected !", clients.len());
-                for client in clients.iter_mut() {
-                    let peer_addr = client.stream.peer_addr().unwrap();
-                    //                    println!("{}", peer_addr);
-                    let _ = client.stream.set_read_timeout(Some(Duration::from_millis(10)));
 
-                    match client.stream.read(&mut client_message) {
-                        Err(e) => {
-                            if e.kind() == ErrorKind::ConnectionAborted {
+            if clients.len() != 0 {
+                println!("{} clients connected !", clients.len());
+            }
 
-                                println!("SHIIIIT3");
-                                println!("oups: {}", e);
-                            } else {
-                                println!("Nope");
-                            }
-                        },
-                        Ok(nb) => {
+            for client in clients.iter_mut() {
+                let peer_addr = match client.stream.peer_addr() {
+                    Err(e) => {println!("{}", e); let server : SocketAddr = "0.0.0.0:0".parse().unwrap(); server},
+                    Ok(addr) => {addr}
 
-                            if nb != 0 {
-                                println!("{}", str::from_utf8(&client_message).unwrap());
-                                let _ = client.stream.write(client.pseudo.as_bytes());
-                            }
+                };
+                println!("Client : {} connected with id {}", peer_addr, client.id);
+
+                match client.stream.read(&mut client_message) {
+                    // Error if nothing to read is normal because of non-blocking read
+                    Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
+                        println!("Nothing to read from {}", client.pseudo);
+                    },
+                    Err(e) => {
+                        println!("Error from client: {}", e);
+                        println!("Error from client: {:?}", e.kind());
+                    },
+                    Ok(nb) => {
+
+                        if nb != 0 {
+                            println!("Client : {} said : {}", client.pseudo, str::from_utf8(&client_message).unwrap());
+                            let _ = client.stream.write("Ack".as_bytes());
+                        }
+                        // Client disconnected, remove it
+                        else {
+                            println!("Client disconnected");
+                            remove_ids.push(client.id);
                         }
                     }
                 }
             }
+
+            // Remove disconnected clients 
+            for remove_id in remove_ids.iter(){
+                clients.retain(|ref x| x.id != *remove_id);
+                println!("Client with id : {} removed", remove_id);
+            }
+            remove_ids.clear();
+
         }
-        thread::sleep_ms(50);
+        thread::sleep_ms(200);
     }
 
 }
@@ -59,6 +78,7 @@ pub fn lobby() {
     let clone = clients_sharable.clone();
     println!("Message handler spawning");
     thread::spawn(move || handle_messages(clone));
+    let mut ids = 0;
 
     println!("Listening ...");
     // accept connections and process them, spawning a new thread for each one
@@ -75,12 +95,15 @@ pub fn lobby() {
 
                 let mut clients = clients_sharable.lock().unwrap();
                 println!("Pushing new client in Vec !");
-                clients.push(Client {stream : stream, pseudo : pseudo.clone()});
+                let client = Client {id: ids, stream : stream, pseudo : pseudo.clone()};
+                let _ = client.stream.set_read_timeout(Some(Duration::from_millis(10)));
+
+                clients.push(client);
+                ids += 1;
             }
-            Err(e)
-                => {
-                    println!("Error in lobby listener");
-                }
+            Err(e) => {
+                println!("Error in lobby listener");
+            }
         }
     }
 
