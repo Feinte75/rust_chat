@@ -1,4 +1,4 @@
-use std::net::{TcpListener, TcpStream, SocketAddr, SocketAddrV4, IpAddr, Ipv4Addr, ToSocketAddrs};
+use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::thread;
 use std::sync::{Arc, Mutex};
 use std::io::prelude::*;
@@ -14,7 +14,7 @@ struct Client {
 
 fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
 
-    let mut client_message = [0 ; 100];
+    let mut client_message = String::new(); 
     let mut remove_ids = Vec::new();
 
     loop {
@@ -32,8 +32,9 @@ fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
 
                 };
                 println!("Client : {} connected with id {}", peer_addr, client.id);
-
-                match client.stream.read(&mut client_message) {
+                
+                let buffer : &mut[u8] = &mut[0;100];
+                match client.stream.read(buffer) {
                     // Error if nothing to read is normal because of non-blocking read
                     Err(ref e) if e.kind() == ErrorKind::WouldBlock => {
                         println!("Nothing to read from {}", client.pseudo);
@@ -41,11 +42,14 @@ fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
                     Err(e) => {
                         println!("Error from client: {}", e);
                         println!("Error from client: {:?}", e.kind());
+                        println!("Client disconnected");
+                        remove_ids.push(client.id);
                     },
                     Ok(nb) => {
 
                         if nb != 0 {
-                            println!("Client : {} said : {}", client.pseudo, str::from_utf8(&client_message).unwrap());
+                            client_message.push_str(str::from_utf8(buffer).unwrap());
+                            println!("Client : {} said : {}", client.pseudo, client_message);
                             let _ = client.stream.write("Ack".as_bytes());
                         }
                         // Client disconnected, remove it
@@ -63,7 +67,7 @@ fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
                 println!("Client with id : {} removed", remove_id);
             }
             remove_ids.clear();
-
+            client_message.clear();
         }
         thread::sleep_ms(200);
     }
@@ -102,7 +106,7 @@ pub fn lobby() {
                 ids += 1;
             }
             Err(e) => {
-                println!("Error in lobby listener");
+                println!("Error in lobby listener : {}", e);
             }
         }
     }
