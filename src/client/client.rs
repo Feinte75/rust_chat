@@ -13,9 +13,9 @@ fn get_user_input(tx : Sender<String>) {
     loop {
 
         let _ = io::stdin().read_line(&mut buffer);
-        tx.send(buffer.clone());
+        let _ = tx.send(buffer.clone());
         buffer.clear();
-        thread::sleep_ms(50);
+        thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -69,6 +69,6 @@ pub fn client() {
 
         println!("Server response : {}", str::from_utf8(&buf).unwrap());
         input_message.clear();
-        thread::sleep_ms(100);
+        thread::sleep(Duration::from_millis(100));
     }
 }

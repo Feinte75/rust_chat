@@ -69,7 +69,7 @@ fn handle_messages(clients_sharable : Arc<Mutex<Vec<Client>>>) {
             remove_ids.clear();
             client_message.clear();
         }
-        thread::sleep_ms(200);
+        thread::sleep(Duration::from_millis(200));
     }
 
 }
